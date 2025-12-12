@@ -2,107 +2,231 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restaurant Picker</title>
     <style>
+        :root {
+            --bg-primary: #f5ebe0;
+            --bg-secondary: #e3d5ca;
+            --bg-tertiary: #d6ccc2;
+            --text-primary: #4b3832;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            background-color: #f5ebe0;
+            background-color: var(--bg-primary);
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            color: #4b3832;
+            min-height: 100vh;
+            color: var(--text-primary);
         }
 
         .container {
             text-align: center;
-            background-color: #e3d5ca;
-            padding: 20px 40px;
+            background-color: var(--bg-secondary);
+            padding: 30px 40px;
             border-radius: 12px;
-            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        #restaurant {
-            font-size: 50px;
-            font-weight: bold;
-            color: #4b3832;
-            margin-bottom: 30px;
-            padding: 10px;
-            background-color: #d6ccc2;
-            border-radius: 8px;
-            display: inline-block;
+            box-shadow: 0 4px 8px var(--shadow);
+            max-width: 600px;
             width: 100%;
         }
 
+        #restaurant {
+            font-size: clamp(32px, 5vw, 50px);
+            font-weight: bold;
+            color: var(--text-primary);
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: var(--bg-tertiary);
+            border-radius: 8px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .button-group {
-            margin-top: 20px;
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
         }
 
         button {
-            font-size: 20px;
+            font-size: 18px;
             padding: 12px 24px;
-            margin: 5px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--text-primary);
+            color: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
         }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         #restaurantList {
-            text-align: left; 
+            text-align: left;
+            margin-top: 30px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        #restaurantList ol {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        #restaurantList li {
+            padding: 8px;
+            margin: 4px 0;
+            background-color: var(--bg-tertiary);
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        #restaurantList li:hover {
+            background-color: var(--bg-primary);
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            button {
+                font-size: 16px;
+                padding: 10px 20px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div id="restaurant">午餐吃啥咪</div>
+        <div id="restaurant" role="status" aria-live="polite">午餐吃啥咪</div>
         <div class="button-group">
-            <button id="stopButton">開始排名</button>
-            <button id="rerunButton" disabled>我的隨便其實不是隨便</button>
+            <button id="startButton" aria-label="開始隨機選擇餐廳">開始排名</button>
+            <button id="rerunButton" disabled aria-label="重新排名">我的隨便其實不是隨便</button>
         </div>
-        <div id="restaurantList"></div>
+        <div id="restaurantList" role="region" aria-label="餐廳排名列表"></div>
     </div>
 
     <script>
-        var restaurants = [
+        const RESTAURANTS = [
             '肯德基', '米樂拾穗專業便當店', '麥當勞', '水云濮花椒麻辣麵', '大師兄銷魂麵舖', '牛有廖Beefull',
             '阿麗越南河粉', '隱家拉麵', '巷仔內大腸煎', '小良絆涼麵', '雙連文記花枝羹', '龍鱗拉麵',
             '阿花蕎麥麵', '胡家臺灣小吃', '勝王', '紅燈籠', '橫濱家系拉麵', '通庵 熟成咖哩', 'PIZZA HUT必勝客',
             '而立早午餐', '可蜜達Comida', '名家魯肉飯', 'GET POWER 給力盒子', '雙連高記手工水餃',
             '香滿園', '鴉片粥', '民昇自助餐', '12MINI快煮鍋', '一流二事素椒麵', '有種去錢櫃啊'
         ];
-        var interval;
 
-        function startCycling() {
-            interval = setInterval(function() {
-                index = (index + 1) % restaurants.length;
-                document.getElementById('restaurant').innerText = restaurants[index];
-            }, 50); // Faster cycling
-            document.getElementById('stopButton').disabled = false;
-            document.getElementById('rerunButton').disabled = true;
+        const CYCLE_SPEED = 50; // milliseconds
+
+        class RestaurantPicker {
+            constructor() {
+                this.restaurants = RESTAURANTS;
+                this.currentIndex = 0;
+                this.interval = null;
+                this.isRunning = false;
+
+                // Cache DOM elements
+                this.restaurantDisplay = document.getElementById('restaurant');
+                this.startButton = document.getElementById('startButton');
+                this.rerunButton = document.getElementById('rerunButton');
+                this.restaurantList = document.getElementById('restaurantList');
+
+                this.init();
+            }
+
+            init() {
+                this.startButton.addEventListener('click', () => this.start());
+                this.rerunButton.addEventListener('click', () => this.stop());
+            }
+
+            start() {
+                if (this.isRunning) return;
+
+                this.isRunning = true;
+                this.restaurantList.innerHTML = '';
+                this.startButton.disabled = true;
+                this.rerunButton.disabled = true;
+
+                this.interval = setInterval(() => {
+                    this.currentIndex = (this.currentIndex + 1) % this.restaurants.length;
+                    this.restaurantDisplay.textContent = this.restaurants[this.currentIndex];
+                }, CYCLE_SPEED);
+
+                // Auto-stop after a random duration (2-5 seconds)
+                const randomDuration = Math.random() * 3000 + 2000;
+                setTimeout(() => this.stop(), randomDuration);
+            }
+
+            stop() {
+                if (!this.isRunning && this.interval === null) {
+                    // This is a rerun
+                    this.generateRanking();
+                    return;
+                }
+
+                clearInterval(this.interval);
+                this.interval = null;
+                this.isRunning = false;
+                this.startButton.disabled = false;
+                this.rerunButton.disabled = false;
+
+                this.generateRanking();
+            }
+
+            generateRanking() {
+                // Generate ranked list with random scores
+                const rankedRestaurants = this.restaurants.map(restaurant => ({
+                    name: restaurant,
+                    rank: Math.random() // Using decimal for better randomness
+                }));
+
+                // Sort by rank
+                rankedRestaurants.sort((a, b) => a.rank - b.rank);
+
+                // Display the ranked list
+                const listHtml = rankedRestaurants
+                    .map(item => `<li>${item.name}</li>`)
+                    .join('');
+                
+                this.restaurantList.innerHTML = `<ol>${listHtml}</ol>`;
+
+                // Update main display with top choice
+                this.restaurantDisplay.textContent = rankedRestaurants[0].name;
+            }
         }
 
-        function stopCycling() {
-            clearInterval(interval);
-            document.getElementById('stopButton').disabled = true;
-            document.getElementById('rerunButton').disabled = false;
-
-            // Generate a list of restaurants with random ranks
-            var rankedRestaurants = restaurants.map(restaurant => ({
-                name: restaurant,
-                rank: Math.floor(Math.random() * 100) + 1 // Random rank between 1 and 100
-            }));
-
-            // Sort the list by rank
-            rankedRestaurants.sort((a, b) => a.rank - b.rank);
-
-            // Display the list with ranking numbers
-            var listHtml = rankedRestaurants.map((item, index) => `<li>${item.name}</li>`).join('');
-            document.getElementById('restaurantList').innerHTML = `<ol>${listHtml}</ol>`;
-
-            fetchWeather();
+        // Initialize the app when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => new RestaurantPicker());
+        } else {
+            new RestaurantPicker();
         }
-
-        document.getElementById('stopButton').addEventListener('click', stopCycling);
-        document.getElementById('rerunButton').addEventListener('click', stopCycling);
-
     </script>
 </body>
 </html>
